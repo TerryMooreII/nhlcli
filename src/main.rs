@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
-// use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use chrono::{Local, Duration, NaiveDate};
 use colored::Colorize;
+use dialoguer::Select;
+use dialoguer::theme::ColorfulTheme;
 
 #[derive(Parser)]
 #[command(author, version, about = "NHL CLI Tool")]
@@ -25,27 +26,27 @@ enum Commands {
     Leaders {
         #[arg(default_value = "points")]
         /// Type of leaders
-        /// (points, goals, assists, penalty-minutes, toi, plus-minus, faceoffs)
+        /// (Players: points, goals, assists, penalty-minutes, toi, plus-minus, faceoffs)
+        /// (Goalies: save-percentage, goals-against-avg, shutouts, wins)
         category: String,
     },
     /// Get detailed boxscore for a specific game
-    Boxscore {
-        /// Game ID (e.g., 2023020123)
-        game_id: String,
-    }
+    Boxscore 
 }
 
-async fn get_todays_games(client: &reqwest::Client) -> Result<Value, Box<dyn std::error::Error>> {
-    let yesterday = (Local::now() - Duration::days(1)).format("%Y-%m-%d").to_string();
-    let url = format!("https://api-web.nhle.com/v1/schedule/{}", yesterday);
-    let response = client.get(&url).send().await?;
+const NHL_API_URL: &'static str = "https://api-web.nhle.com/v1";
+
+async fn nhl_api_request(client: &reqwest::Client, url: &str) -> Result<Value, Box<dyn std::error::Error>> {
+    let response = client.get(url).send().await?;
     let json: Value = response.json().await?;
     Ok(json)
 }
 
 async fn display_scores(client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error>> {
+    let yesterday = (Local::now() - Duration::days(1)).format("%Y-%m-%d").to_string();
+    let url = format!("{}/schedule/{}", NHL_API_URL, yesterday);
+    let schedule = nhl_api_request(&client, &url).await?;
     let separator = "-".repeat(52);
-    let schedule = get_todays_games(&client).await?;
     
     for idx in 0..schedule["gameWeek"].as_array().unwrap().len().min(3) {
         if let Some(games) = schedule["gameWeek"][idx]["games"].as_array() {
@@ -69,14 +70,13 @@ async fn display_scores(client: &reqwest::Client) -> Result<(), Box<dyn std::err
                 let home = &game["homeTeam"]["commonName"]["default"].as_str().unwrap_or("Unknown");
                 let away_score = &game["awayTeam"]["score"].as_i64().unwrap_or(0);
                 let home_score = &game["homeTeam"]["score"].as_i64().unwrap_or(0);
-                let game_id = &game["id"].as_i64().unwrap_or(0);
 
                 if away_score > home_score {
-                    println!("{:>18} {:>2} vs {:<2} {} {}", 
+                    println!("{:>18} {:>2} vs {:<2} {}", 
                         away,
                         away_score,
                         home_score.to_string().green().bold(),
-                        home.green().bold(), game_id);
+                        home.green().bold());
                 } else if away_score < home_score {
                     println!("{:>18} {:>2} vs {:<2} {}", 
                         away.green().bold(),
@@ -96,15 +96,9 @@ async fn display_scores(client: &reqwest::Client) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-async fn get_standings(client: &reqwest::Client) -> Result<Value, Box<dyn std::error::Error>> {
-    let url = "https://api-web.nhle.com/v1/standings/now";
-    let response = client.get(url).send().await?;
-    let json: Value = response.json().await?;
-    Ok(json)
-}
-
 async fn display_standings(client: &reqwest::Client, format: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let standings = get_standings(client).await?;
+    let url = format!("{}/standings/now", NHL_API_URL);
+    let standings = nhl_api_request(client, &url).await?;
     let separator = "-".repeat(52);
     let header = format!("{:<22} {:>3} {:>3} {:>3} {:>3} {:>3} {:>6}", 
         "Team", "GP", "W", "L", "OTL", "PTS", "PCT");
@@ -190,7 +184,7 @@ async fn display_standings(client: &reqwest::Client, format: &str) -> Result<(),
                     println!("\n{}", separator);
                     println!("{:^52}", conference.to_uppercase());
                     println!("{}", separator);
-                    println!("{}", header.bold());
+                    println!("{}", header.bold().underline());
 
                     if let Some(teams) = teams_by_conference.get(conference) {
                         let mut teams = teams.clone();
@@ -208,7 +202,7 @@ async fn display_standings(client: &reqwest::Client, format: &str) -> Result<(),
                 println!("\n{}", separator);
                 println!("{:^52}", "NHL STANDINGS");
                 println!("{}", separator);
-                println!("{}", header.bold());
+                println!("{}", header.bold().underline());
 
                 let mut teams: Vec<_> = standings.iter().collect();
                 teams.sort_by_key(|team| -(team["points"].as_i64().unwrap_or(0)));
@@ -245,30 +239,36 @@ fn print_team_stats(team: &Value) {
         points_pct);
 }
 
-async fn get_scoring_leaders(client: &reqwest::Client) -> Result<Value, Box<dyn std::error::Error>> {
-    let url = "https://api-web.nhle.com/v1/skater-stats-leaders/current";
-    let response = client.get(url).send().await?;
-    let json: Value = response.json().await?;
-    Ok(json)
-}
-
 async fn display_leaders(client: &reqwest::Client, category: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let leaders = get_scoring_leaders(client).await?;
-    let separator = "-".repeat(60);
+    let player_url = format!("{}/skater-stats-leaders/current", NHL_API_URL);
+    let goalie_url = format!("{}/goalie-stats-leaders/current", NHL_API_URL);
     
-    let (title, sort_key, property) = match category.to_lowercase().as_str() {
-        "points" => ("NHL Points Leaders", "points", "points"),
-        "goals" => ("NHL Goal Leaders", "goals", "goals"),
-        "assists" => ("NHL Assist Leaders", "assists", "assists"),
-        "toi" => ("NHL Time On Ice Leaders", "toi", "toi"),
-        "plus-minus" => ("NHL Plus Minus Leaders", "plusMinus", "plusMinus"),
-        "penalty-minutes" => ("NHL Penalty Minutes Leaders", "penaltyMins", "penaltyMins"),
-        "faceoffs" => ("NHL Faceoff Leaders", "faceoffLeaders", "faceoffLeaders"),
+    let separator = "-".repeat(60);
+    // Title is the title of the leaderboard
+    // Property is the property to sort by and the property from the api response 
+    // Label is the label to display in the leaderboard
+    // Api_url is the url to get the leaderboard from
+    let (title, property, label, api_url) = match category.to_lowercase().as_str() {
+        // Players
+        "points" => ("Player Points Leaders", "points", "Points", player_url),
+        "goals" => ("Player Goal Leaders", "goals", "Goals", player_url),
+        "assists" => ("Player Assist Leaders", "assists", "Assists", player_url),
+        "toi" => ("Player Time On Ice Leaders", "toi", "Time On Ice",   player_url),
+        "plus-minus" => ("Player Plus Minus Leaders", "plusMinus", "Plus Minus", player_url),
+        "penalty-minutes" => ("Player Penalty Minutes Leaders", "penaltyMins", "Minutes", player_url),
+        "faceoffs" => ("Player Faceoff Leaders", "faceoffLeaders", "Faceoffs", player_url),
+        // Goalies
+        "save-percentage" => ("Goalie Save Percentage Leaders", "savePctg", "Save %", goalie_url),
+        "goals-against-avg" => ("Goalie Goals Against Average Leaders", "goalsAgainstAverage", "GAA", goalie_url),
+        "shutouts" => ("Goalie Shutouts Leaders", "shutouts", "Shutouts", goalie_url),
+        "wins" => ("Goalie Wins Leaders", "wins", "Wins", goalie_url),
         _ => {
             println!("Invalid category. Use 'points', 'goals', or 'assists'");
             return Ok(());
         }
     };
+
+    let leaders = nhl_api_request(client, &api_url).await?;
 
     println!("\n{}", separator);
     println!("{:^60}", title.bold());
@@ -277,12 +277,12 @@ async fn display_leaders(client: &reqwest::Client, category: &str) -> Result<(),
         "Rank",
         "Player",
         "Team",
-        "Value");
+        label);
     println!("{}", separator);
 
     if let Some(players) = leaders[property].as_array() {
         let mut players = players.to_vec();
-        players.sort_by_key(|p| -(p[sort_key].as_i64().unwrap_or(0)));
+        players.sort_by_key(|p| -(p[property].as_i64().unwrap_or(0)));
 
         for (i, player) in players.iter().take(20).enumerate() {
             let first_name = player["firstName"]["default"].as_str().unwrap_or("");
@@ -291,13 +291,19 @@ async fn display_leaders(client: &reqwest::Client, category: &str) -> Result<(),
             let value = player["value"].as_f64().unwrap_or(0.0);
 
             let player_name = format!("{} {}", first_name, last_name);
-            let value_formatted = format!("{}", value.to_string().green().bold());
+            let mut value_formatted = format!("{}", value);
+            if property == "savePctg" {
+              value_formatted = format!("{:.2}%", value * 100.0);
+            }
+            if property == "toi" {
+              value_formatted = format!("{:.2}m", value);
+            }
 
-            println!("{:<4} {:<25} {:<20} {:>19}", 
+            println!("{:<4} {:<25} {:<20} {:>8}", 
                 (i + 1),
                 player_name,
                 team_name,
-                value_formatted
+                value_formatted.to_string().green().bold()
             );
         }
     }
@@ -305,15 +311,9 @@ async fn display_leaders(client: &reqwest::Client, category: &str) -> Result<(),
     Ok(())
 }
 
-async fn get_boxscore(client: &reqwest::Client, game_id: &str) -> Result<Value, Box<dyn std::error::Error>> {
-    let url = format!("https://api-web.nhle.com/v1/gamecenter/{}/landing", game_id);
-    let response = client.get(&url).send().await?;
-    let json: Value = response.json().await?;
-    Ok(json)
-}
-
 async fn display_boxscore(client: &reqwest::Client, game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let game = get_boxscore(client, game_id).await?;
+    let url = format!("{}/gamecenter/{}/landing", NHL_API_URL, game_id);
+    let game = nhl_api_request(client, &url).await?;
     let separator = "=".repeat(70);
     
     // Game Info
@@ -337,13 +337,13 @@ async fn display_boxscore(client: &reqwest::Client, game_id: &str) -> Result<(),
         "LIVE" => format!("Period {} - {}", period, game["clock"]["timeRemaining"].as_str().unwrap_or("")),
         "FINAL" => "Final".to_string(),
         "OFF" => "Final".to_string(),
+        "FUT" => "Game Scheduled".to_string(),
         _ => game_state.to_string()
     };
-    let ot_in_use = game["otInUse"].as_bool().unwrap_or(false);
-    let shootout_in_use = game["shootoutInUse"].as_bool().unwrap_or(false);
-    if shootout_in_use {
+  
+    if period_num == 5 {
         println!("{:^70}", "Final - Shootout".bold());
-    } else if ot_in_use {
+    } else if period_num == 4 {
         println!("{:^70}", "Final - Overtime".bold());
     } else {
         println!("{:^70}", status.bold());
@@ -456,6 +456,70 @@ async fn display_boxscore(client: &reqwest::Client, game_id: &str) -> Result<(),
     Ok(())
 }
 
+async fn get_list_of_games(client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error>> {
+    let yesterday = (Local::now() - Duration::days(2)).format("%Y-%m-%d").to_string();
+    let url = format!("{}/schedule/{}", NHL_API_URL, yesterday);
+    let schedule = nhl_api_request(client, &url).await?;
+
+    // let separator = "-".repeat(52);
+    let mut all_games = Vec::new();
+    let mut display_items = Vec::new();
+    for idx in 0..schedule["gameWeek"].as_array().unwrap().len().min(3) {
+        if let Some(games) = schedule["gameWeek"][idx]["games"].as_array() {
+          let date_str = schedule["gameWeek"][idx]["date"].as_str().unwrap_or("Unknown");
+          let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+          .map(|d| d.format("%A").to_string())
+          .unwrap_or_else(|_| date_str.to_string());
+        for game in games {
+          let away = game["awayTeam"]["commonName"]["default"].as_str().unwrap_or("Unknown");
+          let home = game["homeTeam"]["commonName"]["default"].as_str().unwrap_or("Unknown");
+          let away_score = game["awayTeam"]["score"].as_i64().unwrap_or(0);
+          let home_score = game["homeTeam"]["score"].as_i64().unwrap_or(0);
+          let game_id = game["id"].as_i64().unwrap_or(0);
+          let game_state = game["gameState"].as_str().unwrap_or("");
+
+          let status = match game_state {
+              "LIVE" => "LIVE".to_string(),
+              "FINAL" => "Final".to_string(),
+              "OFF" => "Final".to_string(),
+              "FUT" => "Future".to_string(),
+              _ => game_state.to_string()
+          };
+
+          let display_text = format!("{:<10} {:>18} {:>2} vs {:<2} {:<18} {:<10}  ",
+              date,
+              away,
+              away_score,
+              home_score,
+              home,
+              status,
+          );
+
+          all_games.push(game_id);
+          display_items.push(display_text);
+        }
+      }
+    }
+
+    all_games.reverse();
+    display_items.reverse();
+
+    if display_items.is_empty() {
+      println!("No games found");
+      return Ok(());
+    }
+
+    // Create selection menu
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select a game to view details")
+        .items(&display_items)
+        .default(0)
+        .interact()?;
+
+    display_boxscore(&client, &all_games[selection].to_string()).await?;
+    Ok(())
+} 
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -471,8 +535,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Leaders { category } => {
             display_leaders(&client, &category).await?;
         },
-        Commands::Boxscore { game_id } => {
-            display_boxscore(&client, &game_id).await?;
+        Commands::Boxscore  => {
+            get_list_of_games(&client).await?;
+            // display_boxscore(&client, &game_id).await?;
         }
     }
 
