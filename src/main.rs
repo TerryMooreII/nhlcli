@@ -31,7 +31,7 @@ enum Commands {
         category: String,
     },
     /// Get detailed boxscore for a specific game
-    Boxscore 
+    Boxscores
 }
 
 const NHL_API_URL: &'static str = "https://api-web.nhle.com/v1";
@@ -456,7 +456,7 @@ async fn display_boxscore(client: &reqwest::Client, game_id: &str) -> Result<(),
     Ok(())
 }
 
-async fn get_list_of_games(client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error>> {
+async fn get_list_of_games_for_boxscores(client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error>> {
     let yesterday = (Local::now() - Duration::days(2)).format("%Y-%m-%d").to_string();
     let url = format!("{}/schedule/{}", NHL_API_URL, yesterday);
     let schedule = nhl_api_request(client, &url).await?;
@@ -535,9 +535,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Leaders { category } => {
             display_leaders(&client, &category).await?;
         },
-        Commands::Boxscore  => {
-            get_list_of_games(&client).await?;
-            // display_boxscore(&client, &game_id).await?;
+        Commands::Boxscores  => {
+            get_list_of_games_for_boxscores(&client).await?;
         }
     }
 
