@@ -81,8 +81,8 @@ pub async fn display_boxscore(
 
     // Team scoring
     if let Some(scoring) = game["summary"]["scoring"].as_array() {
-        let mut away_scores = vec![0; scoring.len()];
-        let mut home_scores = vec![0; scoring.len()];
+        let mut away_scores = vec![0; 5];
+        let mut home_scores = vec![0; 5];
 
         for (i, period) in scoring.iter().enumerate() {
             if let Some(goals) = period["goals"].as_array() {
@@ -94,12 +94,6 @@ pub async fn display_boxscore(
                     }
                 }
             }
-        }
-        if away_scores.len() == 3 {
-            away_scores.push(0);
-        }
-        if home_scores.len() == 3 {
-            home_scores.push(0);
         }
 
         // Print away team scoring
