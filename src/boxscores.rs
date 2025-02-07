@@ -212,7 +212,8 @@ pub async fn get_list_of_games_for_boxscores(
                     "LIVE" => "LIVE".to_string(),
                     "FINAL" => "Final".to_string(),
                     "OFF" => "Final".to_string(),
-                    "FUT" => "Future".to_string(),
+                    "PRE" => "Pre-Game".to_string(),
+                    "FUT" => "Game Scheduled".to_string(),
                     _ => game_state.to_string(),
                 };
 
