@@ -42,18 +42,18 @@ pub async fn display_scores(client: &reqwest::Client) -> Result<(), Box<dyn std:
                 if away_score > home_score {
                     println!(
                         "{:>18} {:>2} vs {:<2} {}",
-                        away,
-                        away_score,
-                        home_score.to_string().green().bold(),
-                        home.green().bold()
-                    );
-                } else if away_score < home_score {
-                    println!(
-                        "{:>18} {:>2} vs {:<2} {}",
                         away.green().bold(),
                         away_score.to_string().green().bold(),
                         home_score,
                         home
+                    );
+                } else if away_score < home_score {
+                    println!(
+                        "{:>18} {:>2} vs {:<2} {}",
+                        away,
+                        away_score,
+                        home_score.to_string().green().bold(),
+                        home.green().bold()
                     );
                 } else {
                     println!(
