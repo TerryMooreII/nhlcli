@@ -50,5 +50,10 @@ nhlcli leaders wins
 nhlcli boxscores
 ```
 
+### Show Ovi's goals and how many more he needs to beat Gretzky's record
+```
+nhlcli ovi
+```
+
 ## License
 MIT License

@@ -36,13 +36,28 @@ pub async fn display_boxscore(
     println!("{:^70}", game_date_formatted);
 
     let status = match game_state {
-        "LIVE" => format!(
-            "Period {} - {}",
-            period,
-            game["clock"]["timeRemaining"].as_str().unwrap_or("")
-        ),
+        "LIVE" => {
+            let mut label = "Period";
+            let is_intermission = game["clock"]["inIntermission"].as_bool().unwrap_or(false);
+            if is_intermission {
+                label = "Intermission";
+            }
+            if period_num == 4 {
+                label = "Overtime";
+            }
+            if period_num == 5 {
+                label = "Shootout";
+            }
+            format!(
+                "{} {} - {}",
+                label,
+                period,
+                game["clock"]["timeRemaining"].as_str().unwrap_or("")
+            )
+        }
         "FINAL" => "Final".to_string(),
         "OFF" => "Final".to_string(),
+        "PRE" => "Pre-Game".to_string(),
         "FUT" => "Game Scheduled".to_string(),
         _ => game_state.to_string(),
     };
@@ -61,7 +76,7 @@ pub async fn display_boxscore(
     println!("{}", "-".repeat(70));
     println!(
         "{:>20} {:>8} {:>8} {:>8} {:>8} {:>8}",
-        "", "1st", "2nd", "3rd", period, "Final"
+        "", "1st", "2nd", "3rd", "OT", "Final"
     );
 
     // Team scoring

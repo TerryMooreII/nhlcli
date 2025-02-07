@@ -3,6 +3,7 @@ mod boxscores;
 mod leaders;
 mod scores;
 mod standings;
+mod ovi;
 
 use clap::{Parser, Subcommand};
 
@@ -32,6 +33,7 @@ enum Commands {
     },
     /// Get detailed boxscore for a specific game
     Boxscores,
+    Ovi
 }
 
 #[tokio::main]
@@ -51,6 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Boxscores => {
             boxscores::get_list_of_games_for_boxscores(&client).await?;
+        }
+        Commands::Ovi => {
+            ovi::display_ovi(&client).await?;
         }
     }
 
