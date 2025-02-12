@@ -61,6 +61,9 @@ pub async fn display_standings(
                         })
                         .collect();
 
+                    // Collect division leaders to filter out from wild card standings
+                    let mut division_leaders = vec![];  
+
                     // Print division leaders
                     for (division_name, teams) in divisions {
                         println!("\n{} {}", division_name.bold(), "Division".bold());
@@ -71,6 +74,7 @@ pub async fn display_standings(
 
                         // Print top 3 teams
                         for team in teams.iter().take(3) {
+                            division_leaders.push(team["teamName"]["default"].as_str().unwrap_or("Unknown"));
                             print_team_stats(team);
                         }
                     }
@@ -83,10 +87,10 @@ pub async fn display_standings(
                     all_teams.sort_by_key(|team| -(team["points"].as_i64().unwrap_or(0)));
 
                     // Get teams not in top 3 of their division
-                    let wild_card_teams: Vec<_> = all_teams.iter().collect();
+                    let wild_card_teams: Vec<_> = all_teams.iter().filter(|team| !division_leaders.contains(&team["teamName"]["default"].as_str().unwrap_or("Unknown"))).collect();
 
                     // Print wild card teams and teams outside playoff spot
-                    for (i, team) in wild_card_teams.iter().skip(6).enumerate() {
+                    for (i, team) in wild_card_teams.iter().enumerate() {
                         if i == 2 {
                             println!("{}", "-".repeat(52));
                         }
@@ -167,6 +171,6 @@ fn print_team_stats(team: &Value) {
 
     println!(
         "{:<22} {:>3} {:>3} {:>3} {:>3} {:>3} {:>6.3}",
-        team_name, games_played, wins, losses, otl, points, points_pct
+        team_name, games_played, wins, losses, otl, points.to_string().bold(), points_pct
     );
 }
